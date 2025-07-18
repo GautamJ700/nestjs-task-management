@@ -9,16 +9,16 @@ import { JwtModule } from '@nestjs/jwt';
 import { JwtStrategy } from './jwt.strategy';
 
 @Module({
-  imports:[
+  imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.register({
       secret: process.env.JWT_SECRET || 'defaultSecretKey',
       signOptions: { expiresIn: '1h' },
     }),
-    TypeOrmModule.forFeature([User,UserRepository])
+    TypeOrmModule.forFeature([User]) // Remove UserRepository from here
   ],
-  providers: [AuthService,JwtStrategy],
+  providers: [AuthService, UserRepository, JwtStrategy], // Add UserRepository as a provider
   controllers: [AuthController],
-  exports:[JwtStrategy,PassportModule],
+  exports: [JwtStrategy, PassportModule],
 })
 export class AuthModule {}

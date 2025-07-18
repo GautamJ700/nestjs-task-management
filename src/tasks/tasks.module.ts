@@ -8,8 +8,8 @@ import { AuthModule } from 'src/auth/auth.module';
 import { TaskRepository } from './task.repository';
 
 @Module({
-  imports:[TypeOrmModule.forFeature([Task,TaskRepository]),AuthModule],
+  imports: [TypeOrmModule.forFeature([Task]), AuthModule], // Remove TaskRepository from here
   controllers: [TasksController],
-  providers: [TasksService]
+  providers: [TasksService, TaskRepository] // Add TaskRepository as a provider
 })
 export class TasksModule {}

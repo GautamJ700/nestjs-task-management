@@ -1,0 +1,167 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { TasksService } from './tasks.service';
+import { CreateTaskdto } from './dto/create-task.dto';
+import { Task } from './task.entity';
+import { UpdateTaskStatusDto } from './dto/update-task-status.dto';
+import { GetTaskFilterDto } from './dto/get-task-filter.dto';
+import { AuthGuard } from '@nestjs/passport';
+import { GetUser } from '../auth/get-user.decorator';
+import { User } from '../auth/user.entity';
+
+@Controller('tasks')
+@UseGuards(AuthGuard())
+export class TasksController {
+  constructor(private taskservice: TasksService) {}
+
+  @Get()
+  getTasks(
+    @Query() filterDto: GetTaskFilterDto,
+    @GetUser() user: User,
+  ): Promise<Task[]> {
+    return this.taskservice.getTask(filterDto, user);
+  }
+
+  @Get('/:id')
+  getTaskByID(
+    @Param('id') id: string,
+    @GetUser() user: User,
+  ): Promise<Task> {
+    return this.taskservice.getTaskById(id, user);
+  }
+
+  @Post()
+  createTask(
+    @Body() CreateTaskdto: CreateTaskdto,
+    @GetUser() user: User,
+  ): Promise<Task> {
+    return this.taskservice.createTask(CreateTaskdto, user);
+  }
+
+  @Delete('/:id')
+  deleteTaskById(
+    @Param('id') id: string,
+    @GetUser() user: User,
+  ): Promise<void> {
+    return this.taskservice.deleteTaskById(id, user);
+  }
+
+  @Patch('/:id/status')
+  updateTaskStatus(
+    @Param('id') id: string,
+    @Body() updateTaskStatusDto: UpdateTaskStatusDto,
+    @GetUser() user: User,
+  ): Promise<Task> {
+    const { status } = updateTaskStatusDto;
+    return this.taskservice.updateTaskStatus(id, status, user);
+  }
+}  ------------------
+
+  import { Injectable, NotFoundException } from '@nestjs/common';
+import { CreateTaskdto } from './dto/create-task.dto';
+import { GetTaskFilterDto } from './dto/get-task-filter.dto';
+import { TaskRepository } from './task.repository';
+import { Task } from './task.entity';
+import { TaskStatus } from './task.status-enum';
+import { User } from '../auth/user.entity';
+
+@Injectable()
+export class TasksService {
+  constructor(
+    private taskRepository: TaskRepository,
+  ) {}
+
+  async getTaskById(id: string, user: User): Promise<Task> {
+    const found = await this.taskRepository.findOne({ 
+      where: { id, user: { id: user.id } } 
+    });
+    if (!found) {
+      throw new NotFoundException(`Task with id ${id} not found`);
+    }
+    return found;
+  }
+
+  createTask(createTaskdto: CreateTaskdto, user: User): Promise<Task> {
+    return this.taskRepository.createTask(createTaskdto, user);
+  }
+
+  async deleteTaskById(id: string, user: User): Promise<void> {
+    const result = await this.taskRepository.delete({ 
+      id, 
+      user: { id: user.id } 
+    });
+    if (result.affected === 0) {
+      throw new NotFoundException(`Task with id ${id} not found`);
+    }
+  }
+
+  async updateTaskStatus(id: string, status: TaskStatus, user: User): Promise<Task> {
+    const task = await this.getTaskById(id, user);
+    task.status = status;
+    await this.taskRepository.save(task);
+    return task;
+  }
+
+  getTask(filterDto: GetTaskFilterDto, user: User): Promise<Task[]> {
+    return this.taskRepository.getTask(filterDto, user);
+  }
+} --------------
+
+  import { DataSource, Repository } from 'typeorm';
+import { Task } from './task.entity';
+import { CreateTaskdto } from './dto/create-task.dto';
+import { TaskStatus } from './task.status-enum';
+import { Injectable } from '@nestjs/common';
+import { GetTaskFilterDto } from './dto/get-task-filter.dto';
+import { User } from '../auth/user.entity';
+
+@Injectable()
+export class TaskRepository extends Repository<Task> {
+  constructor(private dataSource: DataSource) {
+    super(Task, dataSource.createEntityManager());
+  }
+
+  async getTask(filterDto: GetTaskFilterDto, user: User): Promise<Task[]> {
+    const { status, search } = filterDto;
+    const query = this.createQueryBuilder('task');
+    
+    query.where('task.userId = :userId', { userId: user.id });
+
+    if (status) {
+      query.andWhere('task.status = :status', { status });
+    }
+    
+    if (search) {
+      query.andWhere(
+        'LOWER(task.title) LIKE LOWER(:search) OR LOWER(task.description) LIKE LOWER(:search)',
+        { search: `%${search}%` },
+      );
+    }
+
+    const tasks = await query.getMany();
+    return tasks;
+  }
+
+  async createTask(createTaskdto: CreateTaskdto, user: User): Promise<Task> {
+    const { title, description } = createTaskdto;
+
+    const task = this.create({
+      title,
+      description,
+      status: TaskStatus.OPEN,
+      user,
+    });
+
+    await this.save(task);
+    return task;
+  }
+}
